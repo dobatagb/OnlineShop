@@ -11,6 +11,7 @@ styles.replaceSync(`
   .out { color: #cf222e; }
   .selection ul { list-style: none; padding: 0; margin: 0 0 .75rem; }
   .selection li { display: flex; justify-content: space-between; gap: .5rem; padding: .25rem 0; }
+  .selection input[name=coupon] { width: 100%; margin-bottom: .75rem; }
   .selection button.primary { width: 100%; }
 `);
 
@@ -59,9 +60,10 @@ class ProductCatalog extends HTMLElement {
         <aside class="card selection">
           <h2>New order</h2>
           <div data-part="selection"></div>
+          <input name="coupon" placeholder="Coupon code (optional)" aria-label="Coupon code">
           <button class="primary" data-action="create">Create order</button>
           <p class="error" data-part="create-error" hidden></p>
-          <p class="muted">Final prices are calculated by the server.</p>
+          <p class="muted">Final prices and discounts are calculated by the server.</p>
         </aside>
       </div>`;
 
@@ -146,13 +148,14 @@ class ProductCatalog extends HTMLElement {
   }
 
   async #createOrder() {
+    const couponCode = this.shadowRoot.querySelector('input[name=coupon]').value.trim();
     const items = [...this.#selection.values()].map(({ product, quantity }) => ({ productId: product.id, quantity }));
 
     this.#submitting = true;
     this.#showError('create-error', null);
     this.#renderSelection();
     try {
-      const order = await api.createOrder({ items });
+      const order = await api.createOrder({ items, couponCode: couponCode || undefined });
       this.#selection.clear();
       this.dispatchEvent(new CustomEvent('order-created', { detail: { id: order.id }, bubbles: true, composed: true }));
     } catch (err) {

@@ -6,6 +6,7 @@ styles.replaceSync(`
   .meta { margin: -.5rem 0 1rem; }
   .footer { margin-top: 1rem; align-items: flex-start; }
   .actions { margin-top: 1.25rem; border-top: 1px solid #eaeef2; padding-top: 1rem; }
+  .coupon input { width: 10rem; }
 `);
 
 class OrderDetail extends HTMLElement {
@@ -50,6 +51,13 @@ class OrderDetail extends HTMLElement {
         return this.#update({ itemsMode: 'Replace', items: this.#readQuantities() }, 'Order updated.');
       case 'remove-line':
         return this.#update({ items: [{ productId: button.dataset.id, quantity: 0 }] }, 'Product removed.');
+      case 'apply-coupon': {
+        const code = this.shadowRoot.querySelector('input[name=coupon]').value.trim();
+        if (!code) return this.#show({ error: 'Enter a coupon code.' });
+        return this.#update({ couponCode: code }, `Coupon ${code.toUpperCase()} applied.`);
+      }
+      case 'remove-coupon':
+        return this.#update({ removeCoupon: true }, 'Coupon removed.');
       case 'place':
         return this.#run(async () => {
           this.#order = await api.placeOrder(this.#orderId);
@@ -91,6 +99,12 @@ class OrderDetail extends HTMLElement {
       this.#busy = false;
       if (this.isConnected) this.#render();
     }
+  }
+
+  #show({ error }) {
+    this.#error = error;
+    this.#notice = null;
+    this.#render();
   }
 
   #render() {
@@ -144,9 +158,16 @@ class OrderDetail extends HTMLElement {
         </div>
 
         <div class="row footer">
+          ${editable ? `
+            <div class="coupon">
+              ${order.couponCode
+                ? `<p>Coupon <strong>${escapeHtml(order.couponCode)}</strong> <button class="link danger" data-action="remove-coupon" ${disabled}>Remove</button></p>`
+                : `<div class="row"><input name="coupon" placeholder="Coupon code" aria-label="Coupon code" ${disabled}>
+                   <button data-action="apply-coupon" ${disabled}>Apply</button></div>`}
+            </div>` : (order.couponCode ? `<p>Coupon <strong>${escapeHtml(order.couponCode)}</strong></p>` : '')}
           <div class="totals">
             <div><span>Subtotal</span><span>${formatMoney(order.subtotal)}</span></div>
-            ${order.discount > 0 ? `<div><span>Discount</span><span>−${formatMoney(order.discount)}</span></div>` : ''}
+            <div><span>Discount</span><span>−${formatMoney(order.discount)}</span></div>
             <div class="grand"><span>Total</span><span>${formatMoney(order.total)}</span></div>
           </div>
         </div>

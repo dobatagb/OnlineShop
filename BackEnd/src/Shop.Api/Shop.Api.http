@@ -1,0 +1,92 @@
+@baseUrl = http://localhost:5080
+
+### Login as the seeded user
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{ "email": "demo@shop.test", "password": "Demo123!" }
+
+###
+@token = {{login.response.body.accessToken}}
+
+### List products (paging + sorting). sortBy: name|price|sku|category|stockQuantity|createdAt
+# @name products
+GET {{baseUrl}}/products?page=1&pageSize=5&sortBy=price&sortDirection=desc
+
+###
+@productA = {{products.response.body.items[0].id}}
+@productB = {{products.response.body.items[1].id}}
+
+### Create an order (prices come from the catalogue, never from the client)
+# @name created
+POST {{baseUrl}}/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "items": [
+    { "productId": "{{productA}}", "quantity": 1 },
+    { "productId": "{{productB}}", "quantity": 2 }
+  ],
+  "couponCode": "WELCOME10"
+}
+
+###
+@orderId = {{created.response.body.id}}
+
+### Get the order with items and computed totals
+GET {{baseUrl}}/orders/{{orderId}}
+Authorization: Bearer {{token}}
+
+### List my orders
+GET {{baseUrl}}/orders?page=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### Update: change a quantity (merge mode) and switch coupon
+PATCH {{baseUrl}}/orders/{{orderId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "items": [ { "productId": "{{productB}}", "quantity": 3 } ],
+  "couponCode": "SAVE20"
+}
+
+### Update: remove a line (quantity 0) and remove the coupon
+PATCH {{baseUrl}}/orders/{{orderId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "items": [ { "productId": "{{productB}}", "quantity": 0 } ],
+  "removeCoupon": true
+}
+
+### Update: replace all lines
+PATCH {{baseUrl}}/orders/{{orderId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "itemsMode": "Replace",
+  "items": [ { "productId": "{{productB}}", "quantity": 1 } ]
+}
+
+### Expired coupon -> 400 coupon.not_valid
+PATCH {{baseUrl}}/orders/{{orderId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "couponCode": "SPRING2024" }
+
+### Place the order (locks prices; no further changes)
+POST {{baseUrl}}/orders/{{orderId}}/place
+Authorization: Bearer {{token}}
+
+### Delete (soft-delete; releases reserved stock)
+DELETE {{baseUrl}}/orders/{{orderId}}
+Authorization: Bearer {{token}}
+
+### Without a token -> 401
+GET {{baseUrl}}/orders/{{orderId}}

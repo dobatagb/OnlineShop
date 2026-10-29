@@ -11,6 +11,81 @@ FrontEnd/   Static Web Components app (index.html, src/), nginx.conf for Docker
 docker-compose.yml   SQL Server + API + front end
 ```
 
+## Summary
+
+### Key technical decisions
+
+- **Clean Architecture.** Four projects: Domain → Application → Infrastructure / Api, with dependencies pointing inwards. Architecture tests (NetArchTest) fail the build if a layer reaches outwards.
+- **Rich domain model.** The `Order` aggregate owns pricing, coupon rules, stock reservation and status changes. Use cases only load data, call the domain and save.
+- **Server-side pricing only.** Clients send product ids and quantities, never prices. Every change re-prices the draft from the catalogue, and SQL check constraints back the main money rules.
+- **Optimistic concurrency** on products and orders (`Version` token) with an automatic retry, so two buyers can never take the last unit. I verified it with 10 parallel requests against one unit in stock: exactly one succeeds and nine get 409.
+- **Background job** (`AbandonedDraftSweeper`): a `BackgroundService` that only schedules. The expiry logic is a use case, it is configurable, every run is logged, and each order is saved on its own so one conflict does not roll back the others.
+- **Infrastructure:** SQL Server with EF Core migrations and an idempotent seed. Docker Compose runs the whole stack with one command.
+- **Front end:** native Web Components with Shadow DOM and no build step. A small `ApiClient` and `SessionStore` handle the API and the token, and components talk to each other through `CustomEvent`s.
+
+### Assumptions, trade-offs and planning
+
+- **Planning:** I picked the abandoned-draft sweeper as the background job, because it fits stock reservation: drafts hold stock, and the sweeper returns it. I built the domain and API first, then the UI, then the tests, then hardening and the refactor.
+- **Assumptions:**
+  - One seeded user is enough, so there is no registration.
+  - The product catalogue is read-only.
+  - Deleting an order is a soft delete that releases its stock.
+  - A placed order is locked.
+- **Coupons:** the brief asks for coupons but does not define their rules, so I chose them:
+  - a coupon is either a percentage or a fixed amount;
+  - it can have a minimum subtotal and a validity window;
+  - the discount never exceeds the subtotal;
+  - an order has at most one coupon.
+
+  In the UI, a coupon can be entered when creating an order, and applied or removed on a draft.
+- **Trade-offs:**
+  - no MediatR: use cases are plain injected classes;
+  - exceptions instead of a `Result<T>` type;
+  - stock is reserved at draft time, which is why the sweeper exists;
+  - migrations run on startup to keep setup to one command;
+  - UUIDv7 keys are generated in the domain, but they are not sequential in a SQL Server clustered index;
+  - plain template strings in components keep the front end free of dependencies.
+- **Skipped on purpose:**
+  - refresh tokens, registration and roles;
+  - product management endpoints;
+  - payment;
+  - login rate limiting;
+  - front-end automated tests.
+- **Next steps with more time:**
+  - front-end component and end-to-end tests;
+  - `ETag`/`If-Match` on order updates;
+  - an outbox with domain events (for example a confirmation email);
+  - OpenTelemetry;
+  - a CI pipeline.
+
+### Challenges and how I addressed them
+
+- **EF Core and domain-generated GUIDs.** A new order line with a pre-set id was treated as an existing row (an `UPDATE` that affected 0 rows). I fixed this with `ValueGeneratedNever()` on all keys.
+- **Changing database mid-way, from PostgreSQL to SQL Server.** I swapped the provider, rewrote the check constraints in T-SQL, regenerated the migration and moved the integration tests to a SQL Server Testcontainer. The SQL Server container uses host port 14330 so it does not clash with a local SQL Server instance.
+- **Testing concurrency for real.** The live race test exposed that a malformed request body returned 500 instead of 400. I mapped `BadHttpRequestException` to a problem-details 400 in every environment.
+- **Background job talking to the database directly.** Its logic sat in the API project and used `DbContext`. I extracted an Application layer with ports, so the job and endpoints only call use cases, and added architecture tests that enforce this.
+- **Front-end state issues:**
+  - Re-rendering the whole product list on every quantity change stole input focus. I now render the table and the order panel separately.
+  - Fast sort or page changes could show an older response last. I now cancel stale requests with `AbortController`.
+- **Small fixes:**
+  - nginx serves files with `no-cache` so changes show up without a hard refresh.
+  - I pinned a vulnerable transitive package (`System.Security.Cryptography.Pkcs`).
+
+### How AI was used
+
+- **Tool and division of work:** I used Claude Code (an AI coding agent) throughout. It generated most of the code, tests, Docker setup and this README from my instructions. I directed the design, reviewed the output and changed it where it did not match what I wanted.
+- **Corrections and changes I made to the AI output:**
+  - **Structure:** I asked for a `BackEnd/` and `FrontEnd/` split, and for SQL Server instead of the PostgreSQL it first chose.
+  - **Architecture:** in review I noticed that the background job accessed the database directly, which led to the Clean Architecture refactor. I moved the request and response contracts into the Application `Abstractions` namespace myself, and the architecture test was then narrowed to forbid only the ports.
+  - **Concurrency:** I questioned how concurrent orders and thread safety were handled. That led to the live race test, the 500-on-malformed-JSON fix, and the front-end fix for out-of-order responses.
+  - **Code style:** no comments in code, and explicit types instead of `var`. I rejected an analyzer rule the AI added that would fail the build on `var`.
+  - **UI:** I briefly removed the coupon fields from the UI, then restored them after re-checking the brief, which requires applying and removing coupons on an order.
+- **Verification:**
+  - Every change was checked by running the full test suite.
+  - API behaviour was smoke-tested against the running Docker stack.
+  - The UI flow was clicked through in a browser.
+  - I reviewed the code before committing.
+
 ## Prerequisites
 
 - Docker Desktop, used for the full stack, for the database in local development, and by the integration tests.
@@ -47,7 +122,7 @@ The API listens on http://localhost:5080. The front end stays at http://localhos
 |---|---|
 | User | `demo@shop.test` / `Demo123!` |
 | Products | 13 products in 8 categories; `SPK-BT-MINI` is out of stock |
-| Coupons | `WELCOME10`: 10% off<br>`SAVE20`: 20.00 off when the subtotal is at least 100.00<br>`SPRING2024`: expired, to show the validation error<br>Coupons are applied through the API (see the `.http` file); the UI does not expose them. |
+| Coupons | `WELCOME10`: 10% off<br>`SAVE20`: 20.00 off when the subtotal is at least 100.00<br>`SPRING2024`: expired, to show the validation error |
 
 ## Tests
 
@@ -55,10 +130,19 @@ The API listens on http://localhost:5080. The front end stays at http://localhos
 dotnet test BackEnd/OnlineShop.slnx
 ```
 
-- **Domain unit tests** (`tests/Shop.Tests/Domain`): pricing, rounding, coupons, stock reservation and status rules on the domain model.
-- **Use case unit tests** (`tests/Shop.Tests/Application`): use cases with in-memory fakes and no database, including retry after a concurrency conflict and the draft sweeper skipping a conflicting order.
-- **Architecture tests** (`tests/Shop.Tests/Architecture`): enforce the dependency rule between the layers.
-- **Integration tests** (`tests/Shop.Tests/Integration`): the real API running in `WebApplicationFactory` against a throwaway SQL Server container from Testcontainers. The first run pulls the SQL Server image, which takes a few minutes. They cover auth, paging and sorting, the order lifecycle, ownership isolation, soft delete, the background job and seed idempotency. Docker must be running.
+| Suite | Tests | What it covers | Result |
+|---|---|---|---|
+| Domain (`tests/Shop.Tests/Domain`) | 14 | Totals from catalogue prices, rounding, coupon rules (percentage, fixed cap, minimum, expiry), stock reserve/release, quantity limits, locked placed orders | ✅ 14 passed |
+| Application (`tests/Shop.Tests/Application`) | 6 | Use cases with in-memory fakes: pricing and coupons, retry after a concurrency conflict, giving up after 3 conflicts, unknown product or coupon, other user's order, draft sweeper skipping a conflicting order | ✅ 6 passed |
+| Architecture (`tests/Shop.Tests/Architecture`) | 5 | Dependency rule between layers; endpoints and the background job only use use cases; a control check that the rules detect real dependencies | ✅ 5 passed |
+| Integration (`tests/Shop.Tests/Integration`) | 22 | Real API against SQL Server in Testcontainers: login, 401 without a token, paging and sorting, 400 on invalid input or malformed JSON, client prices ignored, 409 on insufficient stock, merge and replace updates, coupons, placed orders locked, soft delete releasing stock, user isolation, sweeper, idempotent seeding | ✅ 22 passed |
+| **Total** | **47** | | **✅ 47 passed, 0 failed** |
+
+The integration tests need Docker running. The first run pulls the SQL Server image, which takes a few minutes.
+
+**Manual checks** against the running Docker stack:
+- **Concurrency:** 10 parallel orders for 1 unit in stock gave exactly 1 × 201 and 9 × 409. Stock ended at 0, and the logs show the retries.
+- **UI:** the full flow was clicked through in a browser: login, picking quantities, creating an order with a coupon, applying and removing coupons (including an expired one), changing quantities and deleting the order.
 
 ## API
 
@@ -88,16 +172,6 @@ Errors are RFC 7807 problem details with a stable `code`, for example `coupon.mi
 | 409 | Not enough stock, the order is no longer editable, or a concurrency conflict |
 
 Example requests are in [`BackEnd/src/Shop.Api/Shop.Api.http`](BackEnd/src/Shop.Api/Shop.Api.http). They work with the VS Code REST Client, Visual Studio or Rider. The login token is captured automatically.
-
-### Pricing rules
-
-- **Server-side prices only.** Clients never send prices. Every line is priced from the product in the database, and unknown fields such as `unitPrice` or `total` are ignored.
-- **Rounding.** Money is `decimal(18,2)`, rounded half away from zero. Line total = unit price × quantity; subtotal = sum of line totals; total = subtotal − discount.
-- **Discount limits.** A percentage coupon is between 0 and 100 percent. A fixed discount is capped at the subtotal, so the total is never negative.
-- **Coupon checks.** The coupon must be active and inside its validity window, and the subtotal must meet its minimum. These checks run again on every change. For example, removing items that drops the subtotal below `SAVE20`'s minimum is rejected unless the same request also removes the coupon.
-- **Quantity limits.** Quantity is 1–100 per line, with at most 50 lines and one line per product. An order must have at least one line.
-- **Draft prices.** Draft orders are re-priced from the catalogue on every change and once more when placed. After that, the prices are snapshotted on the order lines.
-- **Database checks.** Check constraints back the main rules: non-negative prices, stock and totals; `Total = Subtotal - Discount`; and `LineTotal = ROUND(UnitPrice * Quantity, 2)`.
 
 ### Stock
 
@@ -166,37 +240,8 @@ Shop.Domain                     entities + business rules, no dependencies
   | `login-form` | Sign-in form |
   | `product-catalog` | Paging, sorting, picking quantities, creating an order |
   | `order-list` | The user's orders |
-  | `order-detail` | Edit quantities, place or delete the order |
+  | `order-detail` | Edit quantities, apply or remove a coupon, place or delete the order |
 
   - **Shared state and API.** `SessionStore` holds the token in `sessionStorage` and raises change events. `ApiClient` wraps `fetch`, attaches the token and turns problem details into errors. On a 401 it clears the session.
   - **Component boundaries.** Each component uses Shadow DOM. Components talk to each other through bubbling `CustomEvent`s (`order-created`, `order-selected`, `order-deleted`), and the root turns those into navigation.
 
-## Notes
-
-### Trade-offs
-
-- **Repositories per aggregate, queries for lists.** Writes go through repositories that load whole aggregates, so the domain enforces every rule. Paged lists use separate query services that project straight to response models, which keeps reads cheap. This is a light CQRS split without separate databases or a mediator.
-- **No MediatR.** Use cases are plain classes injected into endpoints. A mediator would add indirection without a real benefit at this size.
-- **EF-friendly entities.** Domain entities have private parameterless constructors and private setters so EF Core can load them. That is the only concession to persistence; a fully separate persistence model with mapping would be extra ceremony here.
-- **Exceptions for rule violations.** Business rule failures throw typed exceptions that a single handler maps to problem details. A `Result<T>` type would be more explicit, but it is noisier in a codebase this small.
-- **Stock reserved at draft time.** This prevents overselling, but abandoned carts hold stock, which is why the sweeper exists. Reserving only when the order is placed is the other common choice.
-- **Automatic migrations.** Migrations run on startup to keep setup to one command. In production I would run them as a separate deployment step.
-- **GUID primary keys.** Ids are UUIDv7, generated in the domain so an entity has its id before it is saved. SQL Server orders `uniqueidentifier` by its last bytes, so these ids are not sequential in the clustered index. That is fine at this scale; for a large table I would generate SQL Server–friendly sequential GUIDs or use a separate clustered key.
-- **Front end against port 5080.** The front end calls the API directly on port 5080 with CORS instead of going through an nginx proxy. The same `config.js` then works both in Docker and with `dotnet run`.
-- **Plain template strings in components.** Components render with template strings and escape every value, rather than using a template library. That keeps the front end at zero dependencies.
-
-### Skipped
-
-- Refresh tokens, logout on the server, registration and roles.
-- Product create, update and delete endpoints.
-- Payment and a richer order lifecycle (shipping, refunds).
-- Front-end automated tests.
-- Rate limiting on `/auth/login`.
-
-### Next steps with more time
-
-- **Front end:** component tests (for example Web Test Runner with Playwright) and an end-to-end smoke test of the main flow.
-- **Concurrency:** `ETag`/`If-Match` on `PATCH /orders/{id}` so clients find out when they are editing a stale order.
-- **Order history:** an outbox and domain events for status changes, such as an order confirmation email when an order is placed.
-- **Observability:** OpenTelemetry tracing and metrics, plus a metric for each sweeper run instead of only logs.
-- **Hardening:** secrets from a vault instead of configuration, HTTPS, login rate limiting and lockout, and a CI pipeline that runs the tests and builds the image.

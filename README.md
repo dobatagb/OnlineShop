@@ -15,13 +15,12 @@ docker-compose.yml   SQL Server + API + front end
 
 ### Key technical decisions
 
-- **Clean Architecture.** Four projects: Domain → Application → Infrastructure / Api, with dependencies pointing inwards. Architecture tests (NetArchTest) fail the build if a layer reaches outwards.
+- **Clean Architecture.** Four projects: Domain → Application → Infrastructure / Api, with dependencies pointing inwards. Architecture tests (NetArchTest) fail the test run if a layer reaches outwards.
 - **Rich domain model.** The `Order` aggregate owns pricing, coupon rules, stock reservation and status changes. Use cases only load data, call the domain and save.
 - **Server-side pricing only.** Clients send product ids and quantities, never prices. Every change re-prices the draft from the catalogue, and SQL check constraints back the main money rules.
-- **Optimistic concurrency** on products and orders (`Version` token) with an automatic retry, so two buyers can never take the last unit. I verified it with 10 parallel requests against one unit in stock: exactly one succeeds and nine get 409.
-- **Background job** (`AbandonedDraftSweeper`): a `BackgroundService` that only schedules. The expiry logic is a use case, it is configurable, every run is logged, and each order is saved on its own so one conflict does not roll back the others.
+- **Stock reservation with optimistic concurrency.** A draft reserves stock, and changing a quantity reserves or releases only the difference. Products and orders carry a `Version` token. On a conflict the use case retries with fresh data, up to 3 attempts, before returning 409. I verified it with 10 parallel requests against one unit in stock: exactly one succeeds and nine get 409.
+- **Background job:** an abandoned-draft sweeper. See [Background job](#background-job-abandoned-draft-sweeper).
 - **Infrastructure:** SQL Server with EF Core migrations and an idempotent seed. Docker Compose runs the whole stack with one command.
-- **Front end:** native Web Components with Shadow DOM and no build step. A small `ApiClient` and `SessionStore` handle the API and the token, and components talk to each other through `CustomEvent`s.
 
 ### Assumptions, trade-offs and planning
 
@@ -36,7 +35,13 @@ docker-compose.yml   SQL Server + API + front end
   - it can have a minimum subtotal and a validity window;
   - the discount never exceeds the subtotal;
   - an order has at most one coupon.
-
+- **Trade-offs:**
+  - stock is reserved at draft time, which prevents overselling but makes abandoned carts hold stock (hence the sweeper);
+  - use cases are plain classes behind interfaces, without MediatR;
+  - rule violations are typed exceptions mapped to problem details, rather than a `Result<T>` type;
+  - migrations run on startup to keep setup to one command;
+  - UUIDv7 keys are generated in the domain, but they are not sequential in a SQL Server clustered index.
+- **Skipped on purpose:** refresh tokens, product management endpoints, payment, login rate limiting and front-end automated tests.
 - **Next steps with more time:**
   - **User registration and full user management:** sign-up, email confirmation, password reset, profile editing, and deactivating or deleting users;
   - **User roles:** `Customer` and `Admin`, with role-based authorization policies on the endpoints;
@@ -55,22 +60,18 @@ docker-compose.yml   SQL Server + API + front end
 ### Challenges and how I addressed them
 
 - **EF Core and domain-generated GUIDs.** A new order line with a pre-set id was treated as an existing row (an `UPDATE` that affected 0 rows). I fixed this with `ValueGeneratedNever()` on all keys.
-- **Changing database mid-way, from PostgreSQL to SQL Server.** I swapped the provider, rewrote the check constraints in T-SQL, regenerated the migration and moved the integration tests to a SQL Server Testcontainer. The SQL Server container uses host port 14330 so it does not clash with a local SQL Server instance.
 - **Testing concurrency for real.** The live race test exposed that a malformed request body returned 500 instead of 400. I mapped `BadHttpRequestException` to a problem-details 400 in every environment.
 - **Background job talking to the database directly.** Its logic sat in the API project and used `DbContext`. I extracted an Application layer with ports, so the job and endpoints only call use cases, and added architecture tests that enforce this.
 - **Front-end state issues:**
   - Re-rendering the whole product list on every quantity change stole input focus. I now render the table and the order panel separately.
   - Fast sort or page changes could show an older response last. I now cancel stale requests with `AbortController`.
-- **Small fixes:**
-  - nginx serves files with `no-cache` so changes show up without a hard refresh.
-  - I pinned a vulnerable transitive package (`System.Security.Cryptography.Pkcs`).
 
 ### How AI was used
 
 - **Tool and division of work:** I used Claude Code (an AI coding agent) throughout. It generated most of the code, tests, Docker setup and this README from my instructions. I directed the design, reviewed the output and changed it where it did not match what I wanted.
 - **Corrections and changes I made to the AI output:**
   - **Structure:** I asked for a `BackEnd/` and `FrontEnd/` split, and for SQL Server instead of the PostgreSQL it first chose.
-  - **Architecture:** in review I noticed that the background job accessed the database directly, which led to the Clean Architecture refactor. I moved the request and response contracts into the Application `Abstractions` namespace myself, and the architecture test was then narrowed to forbid only the ports.
+  - **Architecture:** in review I noticed that the background job accessed the database directly, which led to the Clean Architecture refactor. I moved the request and response contracts into the Application `Abstractions` namespace myself.
 - **Verification:**
   - Every change was checked by running the full test suite.
   - API behaviour was smoke-tested against the running Docker stack.
@@ -106,7 +107,7 @@ docker compose up -d db web
 dotnet run --project BackEnd/src/Shop.Api
 ```
 
-The API listens on http://localhost:5080. The front end stays at http://localhost:8080, and `FrontEnd/config.js` points the browser at port 5080. If you would rather not use nginx, any static file server works. For example, `npx http-server FrontEnd -p 5500` serves it on port 5500, and the API allows that origin through CORS.
+The API listens on http://localhost:5080 and the front end stays at http://localhost:8080.
 
 ## Seeded data
 
@@ -151,33 +152,15 @@ All `/orders` endpoints need `Authorization: Bearer <token>` and only work on th
 | POST | `/orders/{id}/place` | Locks a draft (extra, not in the brief) |
 | DELETE | `/orders/{id}` | Soft delete; releases reserved stock → 204 |
 
-How `PATCH` treats items:
-- In `Merge` mode (the default), each line in `items` adds a product or changes its quantity. Quantity `0` removes the line.
-- In `Replace` mode, `items` becomes the complete set of lines.
-
-Errors are RFC 7807 problem details with a stable `code`, for example `coupon.minimum_not_met` or `product.insufficient_stock`:
-
-| Status | Meaning |
-|---|---|
-| 400 | Invalid input or a broken business rule |
-| 404 | The order does not exist or is not yours |
-| 409 | Not enough stock, the order is no longer editable, or a concurrency conflict |
-
 **Swagger UI** at http://localhost:5080/swagger lists every endpoint:
 1. Call `POST /auth/login`.
 2. Click **Authorize** and paste the returned `accessToken`.
 
 The order endpoints are marked with a lock and send the token automatically.
 
-**CORS** allows the front-end origins listed in `Cors:AllowedOrigins` in `appsettings.json`: `http://localhost:8080`, `http://localhost:5500` and `http://127.0.0.1:5500`. Other origins get no CORS headers, so browsers block them. Override the list with the environment variables `Cors__AllowedOrigins__0`, `Cors__AllowedOrigins__1` and so on.
+**CORS** allows only the front-end origins listed in `Cors:AllowedOrigins` in `appsettings.json`.
 
 Example requests are in [`BackEnd/src/Shop.Api/Shop.Api.http`](BackEnd/src/Shop.Api/Shop.Api.http). They work with the VS Code REST Client, Visual Studio or Rider. The login token is captured automatically.
-
-### Stock
-
-- A draft reserves stock. A quantity change reserves or releases only the difference.
-- Deleting or expiring an order releases its stock.
-- Products have an optimistic concurrency token, so two orders cannot take the same units. On a conflict the service retries with fresh data up to 3 times before it returns 409.
 
 ### Background job: abandoned-draft sweeper
 
@@ -225,13 +208,7 @@ Shop.Domain                     entities + business rules, no dependencies
   - **EF Core:** the `DbContext`, the Fluent configurations (check constraints, indexes, a soft-delete query filter), the repositories, the unit of work and the migrations. The unit of work turns EF's concurrency exception into the application's `ConcurrencyException`.
   - **Read-side queries:** product and order lists are read without loading the aggregate.
   - **Security:** JWT issuing and password hashing.
-  - **Seeding:** the idempotent seeder.
-- **`Shop.Api`** is the outer shell: minimal API endpoints that only call use cases, the background job that only schedules a use case, JWT validation, the exception-to-ProblemDetails mapping, and the composition root that wires everything together.
-- **Architecture tests** (`tests/Shop.Tests/Architecture`, using NetArchTest) fail the build if these rules break:
-  - the Domain depends on anything else;
-  - the Application depends on EF Core, ASP.NET or Infrastructure;
-  - the Infrastructure depends on the Api;
-  - endpoints or background jobs reach past the use cases.
+- **`Shop.Api`** is the outer shell: minimal API endpoints that only call use cases, the background job host, JWT validation, the exception-to-ProblemDetails mapping, and the composition root that wires everything together.
 - **`FrontEnd`** contains the Web Components:
 
   | Component | Role |

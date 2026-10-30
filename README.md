@@ -68,15 +68,20 @@ docker-compose.yml   SQL Server + API + front end
 
 ### How AI was used
 
-- **Tool and division of work:** I used Claude Code (an AI coding agent) throughout. It generated most of the code, tests, Docker setup and this README from my instructions. I directed the design, reviewed the output and changed it where it did not match what I wanted.
-- **Corrections and changes I made to the AI output:**
-  - **Structure:** I asked for a `BackEnd/` and `FrontEnd/` split, and for SQL Server instead of the PostgreSQL it first chose.
-  - **Architecture:** in review I noticed that the background job accessed the database directly, which led to the Clean Architecture refactor. I moved the request and response contracts into the Application `Abstractions` namespace myself.
+- **Planning was mine:** I broke the task into steps, decided the scope and made the key technical choices. These include SQL Server, a separate `BackEnd/` and `FrontEnd/`, Clean Architecture, interfaces for every use case, Swagger and CORS, keeping coupons in the UI, and what goes into Next steps. I used Claude Code (an AI coding agent) to implement that plan, one step at a time.
+- **What the AI did:** it wrote most of the code, the tests, the Docker setup and drafts of this README, based on my instructions.
+- **How I reviewed it:** I went through the generated code in detail, file by file, before accepting each step. I did not take the output as is. I questioned the design and asked for changes where it did not match what I wanted:
+  - **Architecture:** in review I saw that the background job called the database directly. I had it refactored to Clean Architecture, with the job calling a use case. I moved the request and response contracts into Application `Abstractions` myself.
+  - **Dependencies:** I noticed that endpoints injected concrete use case classes and asked for interfaces. An architecture test now enforces this.
+  - **Concurrency:** I checked how simultaneous orders for the last unit in stock are handled. I also checked whether anything had to be thread-safe and how DI lifetimes (scoped vs singleton) isolate requests. Then I confirmed the optimistic concurrency and retry behaviour.
+  - **Code style:** no comments, explicit types instead of `var`, braces on every `if`/`for` body. I deliberately did not add analyzer rules that would break the build.
+  - **Requirements:** I checked the AI output against the brief. For example, I confirmed that coupons are required by the backend spec before deciding to keep them in the UI.
+  - **Documentation:** I cut this README down, removed sections that added nothing, and added the tests table.
 - **Verification:**
   - Every change was checked by running the full test suite.
   - API behaviour was smoke-tested against the running Docker stack.
   - The UI flow was clicked through in a browser.
-  - I reviewed the code before committing.
+  - I reviewed the final diff before committing.
 
 ## Prerequisites
 

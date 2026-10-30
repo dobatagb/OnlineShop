@@ -100,7 +100,8 @@ docker compose up -d --build
 | What | URL |
 |---|---|
 | Front end | http://localhost:8080 |
-| API | http://localhost:5080 (OpenAPI document: `/openapi/v1.json`, health: `/health`) |
+| API | http://localhost:5080 (health: `/health`) |
+| Swagger UI | http://localhost:5080/swagger (OpenAPI document: `/openapi/v1.json`) |
 | SQL Server | `localhost,14330`, database `Shop`, login `sa` / `Shop_Passw0rd!` (demo-only credentials) |
 
 On startup the API applies the EF Core migrations and seeds the data. Both steps are idempotent.
@@ -170,6 +171,14 @@ Errors are RFC 7807 problem details with a stable `code`, for example `coupon.mi
 | 400 | Invalid input or a broken business rule |
 | 404 | The order does not exist or is not yours |
 | 409 | Not enough stock, the order is no longer editable, or a concurrency conflict |
+
+**Swagger UI** at http://localhost:5080/swagger lists every endpoint:
+1. Call `POST /auth/login`.
+2. Click **Authorize** and paste the returned `accessToken`.
+
+The order endpoints are marked with a lock and send the token automatically.
+
+**CORS** allows the front-end origins listed in `Cors:AllowedOrigins` in `appsettings.json`: `http://localhost:8080`, `http://localhost:5500` and `http://127.0.0.1:5500`. Other origins get no CORS headers, so browsers block them. Override the list with the environment variables `Cors__AllowedOrigins__0`, `Cors__AllowedOrigins__1` and so on.
 
 Example requests are in [`BackEnd/src/Shop.Api/Shop.Api.http`](BackEnd/src/Shop.Api/Shop.Api.http). They work with the VS Code REST Client, Visual Studio or Rider. The login token is captured automatically.
 

@@ -42,7 +42,7 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Ad
 builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ProblemExceptionHandler>();
-builder.Services.AddOpenApi();
+builder.Services.AddShopOpenApi();
 builder.Services.AddHealthChecks().AddDbContextCheck<ShopDbContext>();
 
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -64,7 +64,7 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapOpenApi();
+app.UseShopSwagger();
 app.MapHealthChecks("/health");
 app.MapAuthEndpoints();
 app.MapProductEndpoints();

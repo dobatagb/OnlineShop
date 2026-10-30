@@ -8,7 +8,7 @@ public static class ProductEndpoints
     public static IEndpointRouteBuilder MapProductEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/products", (
-                ListProductsUseCase listProducts,
+                IListProductsUseCase listProducts,
                 int? page,
                 int? pageSize,
                 string? sortBy,

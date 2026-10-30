@@ -10,7 +10,10 @@ internal static class OrderSupport
 {
     public static List<OrderLineRequest> ValidateLines(IReadOnlyList<OrderLineRequest>? items)
     {
-        if (items is null) return [];
+        if (items is null)
+        {
+            return [];
+        }
 
         if (items.Any(i => i.ProductId == Guid.Empty))
         {

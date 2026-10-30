@@ -290,7 +290,7 @@ public class ApiTests(ShopApiFixture api)
     private async Task<int> ExpireAsync()
     {
         await using AsyncServiceScope scope = api.Services.CreateAsyncScope();
-        return await scope.ServiceProvider.GetRequiredService<ExpireAbandonedDraftsUseCase>().ExecuteAsync(TimeSpan.FromMinutes(30), 100, CancellationToken.None);
+        return await scope.ServiceProvider.GetRequiredService<IExpireAbandonedDraftsUseCase>().ExecuteAsync(TimeSpan.FromMinutes(30), 100, CancellationToken.None);
     }
 
     private Task<(int Users, int Products, int Coupons)> CountsAsync() =>

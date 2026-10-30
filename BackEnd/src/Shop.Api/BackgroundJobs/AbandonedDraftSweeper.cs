@@ -52,7 +52,7 @@ public sealed class AbandonedDraftSweeper(
         try
         {
             await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
-            ExpireAbandonedDraftsUseCase expireDrafts = scope.ServiceProvider.GetRequiredService<ExpireAbandonedDraftsUseCase>();
+            IExpireAbandonedDraftsUseCase expireDrafts = scope.ServiceProvider.GetRequiredService<IExpireAbandonedDraftsUseCase>();
 
             long started = timeProvider.GetTimestamp();
             int expired = await expireDrafts.ExecuteAsync(settings.DraftTimeout, settings.BatchSize, ct);

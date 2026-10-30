@@ -15,17 +15,17 @@ public static class OrderEndpoints
             .RequireAuthorization()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
-        orders.MapGet("/", (ClaimsPrincipal user, ListOrdersUseCase listOrders, int? page, int? pageSize, CancellationToken ct) =>
+        orders.MapGet("/", (ClaimsPrincipal user, IListOrdersUseCase listOrders, int? page, int? pageSize, CancellationToken ct) =>
                 listOrders.ExecuteAsync(user.GetUserId(), page, pageSize, ct))
             .Produces<PagedResponse<OrderSummaryResponse>>();
 
-        orders.MapGet("/{id:guid}", (Guid id, ClaimsPrincipal user, GetOrderUseCase getOrder, CancellationToken ct) =>
+        orders.MapGet("/{id:guid}", (Guid id, ClaimsPrincipal user, IGetOrderUseCase getOrder, CancellationToken ct) =>
                 getOrder.ExecuteAsync(user.GetUserId(), id, ct))
             .WithName("GetOrder")
             .Produces<OrderResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        orders.MapPost("/", async (CreateOrderRequest request, ClaimsPrincipal user, CreateOrderUseCase createOrder, CancellationToken ct) =>
+        orders.MapPost("/", async (CreateOrderRequest request, ClaimsPrincipal user, ICreateOrderUseCase createOrder, CancellationToken ct) =>
             {
                 OrderResponse order = await createOrder.ExecuteAsync(user.GetUserId(), request, ct);
                 return Results.CreatedAtRoute("GetOrder", new { id = order.Id }, order);
@@ -34,20 +34,20 @@ public static class OrderEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        orders.MapPatch("/{id:guid}", (Guid id, UpdateOrderRequest request, ClaimsPrincipal user, UpdateOrderUseCase updateOrder, CancellationToken ct) =>
+        orders.MapPatch("/{id:guid}", (Guid id, UpdateOrderRequest request, ClaimsPrincipal user, IUpdateOrderUseCase updateOrder, CancellationToken ct) =>
                 updateOrder.ExecuteAsync(user.GetUserId(), id, request, ct))
             .Produces<OrderResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        orders.MapPost("/{id:guid}/place", (Guid id, ClaimsPrincipal user, PlaceOrderUseCase placeOrder, CancellationToken ct) =>
+        orders.MapPost("/{id:guid}/place", (Guid id, ClaimsPrincipal user, IPlaceOrderUseCase placeOrder, CancellationToken ct) =>
                 placeOrder.ExecuteAsync(user.GetUserId(), id, ct))
             .Produces<OrderResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        orders.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal user, DeleteOrderUseCase deleteOrder, CancellationToken ct) =>
+        orders.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal user, IDeleteOrderUseCase deleteOrder, CancellationToken ct) =>
             {
                 await deleteOrder.ExecuteAsync(user.GetUserId(), id, ct);
                 return Results.NoContent();

@@ -8,10 +8,25 @@ public class Product
 
     public Product(string sku, string name, string description, decimal price, int stockQuantity, string category, DateTimeOffset now)
     {
-        if (string.IsNullOrWhiteSpace(sku)) throw new DomainException("product.sku_required", "SKU is required.");
-        if (price < 0) throw new DomainException("product.invalid_price", "Price cannot be negative.");
-        if (Money.Round(price) != price) throw new DomainException("product.invalid_price", "Price must have at most two decimal places.");
-        if (stockQuantity < 0) throw new DomainException("product.invalid_stock", "Stock quantity cannot be negative.");
+        if (string.IsNullOrWhiteSpace(sku))
+        {
+            throw new DomainException("product.sku_required", "SKU is required.");
+        }
+
+        if (price < 0)
+        {
+            throw new DomainException("product.invalid_price", "Price cannot be negative.");
+        }
+
+        if (Money.Round(price) != price)
+        {
+            throw new DomainException("product.invalid_price", "Price must have at most two decimal places.");
+        }
+
+        if (stockQuantity < 0)
+        {
+            throw new DomainException("product.invalid_stock", "Stock quantity cannot be negative.");
+        }
 
         Id = Guid.CreateVersion7();
         Sku = sku.Trim().ToUpperInvariant();
@@ -38,7 +53,11 @@ public class Product
 
     internal void Reserve(int quantity, DateTimeOffset now)
     {
-        if (quantity <= 0) throw new ArgumentOutOfRangeException(nameof(quantity));
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        }
+
         if (StockQuantity < quantity)
         {
             throw new DomainConflictException(
@@ -52,7 +71,11 @@ public class Product
 
     internal void Release(int quantity, DateTimeOffset now)
     {
-        if (quantity <= 0) throw new ArgumentOutOfRangeException(nameof(quantity));
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        }
+
         StockQuantity += quantity;
         Touch(now);
     }

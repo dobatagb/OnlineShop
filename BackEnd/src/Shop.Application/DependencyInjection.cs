@@ -9,15 +9,15 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        services.AddScoped<LoginUseCase>();
-        services.AddScoped<ListProductsUseCase>();
-        services.AddScoped<ListOrdersUseCase>();
-        services.AddScoped<GetOrderUseCase>();
-        services.AddScoped<CreateOrderUseCase>();
-        services.AddScoped<UpdateOrderUseCase>();
-        services.AddScoped<PlaceOrderUseCase>();
-        services.AddScoped<DeleteOrderUseCase>();
-        services.AddScoped<ExpireAbandonedDraftsUseCase>();
+        services.AddScoped<ILoginUseCase, LoginUseCase>();
+        services.AddScoped<IListProductsUseCase, ListProductsUseCase>();
+        services.AddScoped<IListOrdersUseCase, ListOrdersUseCase>();
+        services.AddScoped<IGetOrderUseCase, GetOrderUseCase>();
+        services.AddScoped<ICreateOrderUseCase, CreateOrderUseCase>();
+        services.AddScoped<IUpdateOrderUseCase, UpdateOrderUseCase>();
+        services.AddScoped<IPlaceOrderUseCase, PlaceOrderUseCase>();
+        services.AddScoped<IDeleteOrderUseCase, DeleteOrderUseCase>();
+        services.AddScoped<IExpireAbandonedDraftsUseCase, ExpireAbandonedDraftsUseCase>();
         return services;
     }
 }

@@ -48,7 +48,11 @@ internal sealed class FakeUnitOfWork : IUnitOfWork
 
     public FakeUnitOfWork FailNextSaves(params bool[] conflicts)
     {
-        foreach (bool conflict in conflicts) _conflicts.Enqueue(conflict);
+        foreach (bool conflict in conflicts)
+        {
+            _conflicts.Enqueue(conflict);
+        }
+
         return this;
     }
 

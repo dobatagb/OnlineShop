@@ -23,7 +23,10 @@ internal sealed class ProductQueries(ShopDbContext db) : IProductQueries
     public async Task<PagedResponse<ProductResponse>> ListAsync(ProductListCriteria criteria, CancellationToken ct)
     {
         IQueryable<Product> query = db.Products.AsNoTracking();
-        if (criteria.Category is not null) query = query.Where(p => p.Category == criteria.Category);
+        if (criteria.Category is not null)
+        {
+            query = query.Where(p => p.Category == criteria.Category);
+        }
 
         int total = await query.CountAsync(ct);
 

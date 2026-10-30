@@ -27,7 +27,13 @@ public enum ProductSort
 
 public sealed record ProductListCriteria(int Page, int PageSize, ProductSort SortBy, bool Descending, string? Category);
 
-public sealed class ListProductsUseCase(IProductQueries queries)
+public interface IListProductsUseCase
+{
+    Task<PagedResponse<ProductResponse>> ExecuteAsync(
+        int? page, int? pageSize, string? sortBy, string? sortDirection, string? category, CancellationToken ct);
+}
+
+public sealed class ListProductsUseCase(IProductQueries queries) : IListProductsUseCase
 {
     private static readonly Dictionary<string, ProductSort> SortFields = Enum.GetValues<ProductSort>()
         .ToDictionary(s => JsonNamingPolicy.CamelCase.ConvertName(s.ToString()), StringComparer.OrdinalIgnoreCase);

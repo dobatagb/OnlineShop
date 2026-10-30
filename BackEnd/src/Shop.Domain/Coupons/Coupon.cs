@@ -21,10 +21,25 @@ public class Coupon
         DateTimeOffset? validFrom = null,
         DateTimeOffset? validUntil = null)
     {
-        if (string.IsNullOrWhiteSpace(code)) throw new DomainException("coupon.code_required", "Coupon code is required.");
-        if (value <= 0) throw new DomainException("coupon.invalid_value", "Coupon value must be positive.");
-        if (type == DiscountType.Percentage && value > 100) throw new DomainException("coupon.invalid_value", "A percentage coupon cannot exceed 100%.");
-        if (minimumSubtotal < 0) throw new DomainException("coupon.invalid_minimum", "Minimum subtotal cannot be negative.");
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new DomainException("coupon.code_required", "Coupon code is required.");
+        }
+
+        if (value <= 0)
+        {
+            throw new DomainException("coupon.invalid_value", "Coupon value must be positive.");
+        }
+
+        if (type == DiscountType.Percentage && value > 100)
+        {
+            throw new DomainException("coupon.invalid_value", "A percentage coupon cannot exceed 100%.");
+        }
+
+        if (minimumSubtotal < 0)
+        {
+            throw new DomainException("coupon.invalid_minimum", "Minimum subtotal cannot be negative.");
+        }
 
         Id = Guid.CreateVersion7();
         Code = NormalizeCode(code);

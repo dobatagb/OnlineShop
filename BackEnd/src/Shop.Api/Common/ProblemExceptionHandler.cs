@@ -22,7 +22,10 @@ public sealed class ProblemExceptionHandler(IProblemDetailsService problemDetail
             _ => null,
         };
 
-        if (mapped is not { } m) return false;
+        if (mapped is not { } m)
+        {
+            return false;
+        }
 
         logger.LogInformation("Request failed with {Status} {Code}: {Detail}", m.status, m.code, m.detail);
 

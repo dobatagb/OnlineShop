@@ -64,12 +64,21 @@ public class Order
         OrderItem? line = _items.Find(i => i.ProductId == product.Id);
         int delta = quantity - (line?.Quantity ?? 0);
 
-        if (delta > 0) product.Reserve(delta, now);
-        else if (delta < 0) product.Release(-delta, now);
+        if (delta > 0)
+        {
+            product.Reserve(delta, now);
+        }
+        else if (delta < 0)
+        {
+            product.Release(-delta, now);
+        }
 
         if (quantity == 0)
         {
-            if (line is not null) _items.Remove(line);
+            if (line is not null)
+            {
+                _items.Remove(line);
+            }
         }
         else if (line is null)
         {
@@ -116,7 +125,10 @@ public class Order
             throw new DomainException("order.empty", "An order must contain at least one product. Delete the order instead.");
         }
 
-        foreach (OrderItem item in _items) item.RefreshPrice();
+        foreach (OrderItem item in _items)
+        {
+            item.RefreshPrice();
+        }
 
         Subtotal = Money.Round(_items.Sum(i => i.LineTotal));
 
@@ -151,15 +163,26 @@ public class Order
 
     public void Delete(DateTimeOffset now)
     {
-        if (DeletedAt is not null) return;
-        if (Status is OrderStatus.Draft or OrderStatus.Placed) ReleaseStock(now);
+        if (DeletedAt is not null)
+        {
+            return;
+        }
+
+        if (Status is OrderStatus.Draft or OrderStatus.Placed)
+        {
+            ReleaseStock(now);
+        }
+
         DeletedAt = now;
         Touch(now);
     }
 
     private void ReleaseStock(DateTimeOffset now)
     {
-        foreach (OrderItem item in _items) item.Product.Release(item.Quantity, now);
+        foreach (OrderItem item in _items)
+        {
+            item.Product.Release(item.Quantity, now);
+        }
     }
 
     private void EnsureDraft()

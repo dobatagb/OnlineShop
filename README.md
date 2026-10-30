@@ -37,21 +37,15 @@ docker-compose.yml   SQL Server + API + front end
   - the discount never exceeds the subtotal;
   - an order has at most one coupon.
 
-  In the UI, a coupon can be entered when creating an order, and applied or removed on a draft.
-- **Trade-offs:**
-  - no MediatR: use cases are plain injected classes;
-  - exceptions instead of a `Result<T>` type;
-  - stock is reserved at draft time, which is why the sweeper exists;
-  - migrations run on startup to keep setup to one command;
-  - UUIDv7 keys are generated in the domain, but they are not sequential in a SQL Server clustered index;
-  - plain template strings in components keep the front end free of dependencies.
-- **Skipped on purpose:**
-  - refresh tokens, registration and roles;
-  - product management endpoints;
-  - payment;
-  - login rate limiting;
-  - front-end automated tests.
 - **Next steps with more time:**
+  - **User registration and full user management:** sign-up, email confirmation, password reset, profile editing, and deactivating or deleting users;
+  - **User roles:** `Customer` and `Admin`, with role-based authorization policies on the endpoints;
+  - **Admin panel:** product and stock management, coupon management, and an overview of all orders and users;
+  - **Background job logging:** a persisted history of every sweeper run (start, duration, expired drafts, errors), visible in the admin panel;
+  - **Error and audit logging:**
+    - structured logs with Serilog to a central store such as Seq or Elasticsearch;
+    - an audit log table recording who created, changed, placed or deleted each order, and when;
+  - **Sales reports and statistics:** revenue per day or month, best-selling products, coupon usage and average order value;
   - front-end component and end-to-end tests;
   - `ETag`/`If-Match` on order updates;
   - an outbox with domain events (for example a confirmation email);
@@ -77,9 +71,6 @@ docker-compose.yml   SQL Server + API + front end
 - **Corrections and changes I made to the AI output:**
   - **Structure:** I asked for a `BackEnd/` and `FrontEnd/` split, and for SQL Server instead of the PostgreSQL it first chose.
   - **Architecture:** in review I noticed that the background job accessed the database directly, which led to the Clean Architecture refactor. I moved the request and response contracts into the Application `Abstractions` namespace myself, and the architecture test was then narrowed to forbid only the ports.
-  - **Concurrency:** I questioned how concurrent orders and thread safety were handled. That led to the live race test, the 500-on-malformed-JSON fix, and the front-end fix for out-of-order responses.
-  - **Code style:** no comments in code, and explicit types instead of `var`. I rejected an analyzer rule the AI added that would fail the build on `var`.
-  - **UI:** I briefly removed the coupon fields from the UI, then restored them after re-checking the brief, which requires applying and removing coupons on an order.
 - **Verification:**
   - Every change was checked by running the full test suite.
   - API behaviour was smoke-tested against the running Docker stack.
@@ -135,9 +126,9 @@ dotnet test BackEnd/OnlineShop.slnx
 |---|---|---|---|
 | Domain (`tests/Shop.Tests/Domain`) | 14 | Totals from catalogue prices, rounding, coupon rules (percentage, fixed cap, minimum, expiry), stock reserve/release, quantity limits, locked placed orders | ✅ 14 passed |
 | Application (`tests/Shop.Tests/Application`) | 6 | Use cases with in-memory fakes: pricing and coupons, retry after a concurrency conflict, giving up after 3 conflicts, unknown product or coupon, other user's order, draft sweeper skipping a conflicting order | ✅ 6 passed |
-| Architecture (`tests/Shop.Tests/Architecture`) | 5 | Dependency rule between layers; endpoints and the background job only use use cases; a control check that the rules detect real dependencies | ✅ 5 passed |
+| Architecture (`tests/Shop.Tests/Architecture`) | 6 | Dependency rule between layers; endpoints and the background job only use use cases, and only through their interfaces; every use case has an interface; a control check that the rules detect real dependencies | ✅ 6 passed |
 | Integration (`tests/Shop.Tests/Integration`) | 22 | Real API against SQL Server in Testcontainers: login, 401 without a token, paging and sorting, 400 on invalid input or malformed JSON, client prices ignored, 409 on insufficient stock, merge and replace updates, coupons, placed orders locked, soft delete releasing stock, user isolation, sweeper, idempotent seeding | ✅ 22 passed |
-| **Total** | **47** | | **✅ 47 passed, 0 failed** |
+| **Total** | **48** | | **✅ 48 passed, 0 failed** |
 
 The integration tests need Docker running. The first run pulls the SQL Server image, which takes a few minutes.
 
@@ -218,7 +209,7 @@ Shop.Domain                     entities + business rules, no dependencies
 ```
 
 - **`Shop.Domain`** has no dependencies. It holds the entities with private setters and behaviour methods, and an `Order` aggregate that owns its lines, pricing, coupon rules and stock reservation. Invariants are enforced here.
-- **`Shop.Application`** holds one class per use case:
+- **`Shop.Application`** holds one class per use case, each behind its own interface (for example `ICreateOrderUseCase`). Endpoints and the background job depend only on the interfaces:
 
   | Area | Use cases |
   |---|---|

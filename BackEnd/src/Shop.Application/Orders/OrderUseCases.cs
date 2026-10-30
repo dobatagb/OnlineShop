@@ -6,13 +6,13 @@ using Shop.Domain.Products;
 
 namespace Shop.Application.Orders;
 
-public sealed class GetOrderUseCase(IOrderRepository orders)
+public sealed class GetOrderUseCase(IOrderRepository orders) : IGetOrderUseCase
 {
     public async Task<OrderResponse> ExecuteAsync(Guid userId, Guid orderId, CancellationToken ct) =>
         OrderResponse.From(await OrderSupport.LoadOwnedOrderAsync(orders, userId, orderId, ct));
 }
 
-public sealed class ListOrdersUseCase(IOrderQueries queries)
+public sealed class ListOrdersUseCase(IOrderQueries queries) : IListOrdersUseCase
 {
     public Task<PagedResponse<OrderSummaryResponse>> ExecuteAsync(Guid userId, int? page, int? pageSize, CancellationToken ct)
     {
@@ -27,20 +27,31 @@ public sealed class CreateOrderUseCase(
     ICouponRepository coupons,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
-    ILogger<CreateOrderUseCase> logger)
+    ILogger<CreateOrderUseCase> logger) : ICreateOrderUseCase
 {
     public Task<OrderResponse> ExecuteAsync(Guid userId, CreateOrderRequest request, CancellationToken ct) =>
         ConcurrencyRetry.ExecuteAsync(unitOfWork, logger, async () =>
         {
             List<OrderLineRequest> lines = OrderSupport.ValidateLines(request.Items);
-            if (lines.Count == 0) throw new RequestValidationException("order.empty", "An order must contain at least one product.");
+            if (lines.Count == 0)
+            {
+                throw new RequestValidationException("order.empty", "An order must contain at least one product.");
+            }
 
             DateTimeOffset now = timeProvider.GetUtcNow();
             IReadOnlyDictionary<Guid, Product> catalogue = await OrderSupport.LoadProductsAsync(products, lines.Select(l => l.ProductId).ToList(), ct);
 
             Order order = new Order(userId, now);
-            foreach (OrderLineRequest line in lines) order.SetItemQuantity(catalogue[line.ProductId], line.Quantity, now);
-            if (!string.IsNullOrWhiteSpace(request.CouponCode)) order.ApplyCoupon(await OrderSupport.LoadCouponAsync(coupons, request.CouponCode, ct));
+            foreach (OrderLineRequest line in lines)
+            {
+                order.SetItemQuantity(catalogue[line.ProductId], line.Quantity, now);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.CouponCode))
+            {
+                order.ApplyCoupon(await OrderSupport.LoadCouponAsync(coupons, request.CouponCode, ct));
+            }
+
             order.Recalculate(now);
 
             orders.Add(order);
@@ -57,7 +68,7 @@ public sealed class UpdateOrderUseCase(
     ICouponRepository coupons,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
-    ILogger<UpdateOrderUseCase> logger)
+    ILogger<UpdateOrderUseCase> logger) : IUpdateOrderUseCase
 {
     public Task<OrderResponse> ExecuteAsync(Guid userId, Guid orderId, UpdateOrderRequest request, CancellationToken ct) =>
         ConcurrencyRetry.ExecuteAsync(unitOfWork, logger, async () =>
@@ -84,11 +95,20 @@ public sealed class UpdateOrderUseCase(
                 }
 
                 IReadOnlyDictionary<Guid, Product> catalogue = await OrderSupport.LoadProductsAsync(products, requestedIds, ct);
-                foreach (OrderLineRequest line in lines) order.SetItemQuantity(catalogue[line.ProductId], line.Quantity, now);
+                foreach (OrderLineRequest line in lines)
+                {
+                    order.SetItemQuantity(catalogue[line.ProductId], line.Quantity, now);
+                }
             }
 
-            if (request.RemoveCoupon) order.RemoveCoupon();
-            else if (!string.IsNullOrWhiteSpace(request.CouponCode)) order.ApplyCoupon(await OrderSupport.LoadCouponAsync(coupons, request.CouponCode, ct));
+            if (request.RemoveCoupon)
+            {
+                order.RemoveCoupon();
+            }
+            else if (!string.IsNullOrWhiteSpace(request.CouponCode))
+            {
+                order.ApplyCoupon(await OrderSupport.LoadCouponAsync(coupons, request.CouponCode, ct));
+            }
 
             order.Recalculate(now);
             await unitOfWork.SaveChangesAsync(ct);
@@ -102,7 +122,7 @@ public sealed class PlaceOrderUseCase(
     IOrderRepository orders,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
-    ILogger<PlaceOrderUseCase> logger)
+    ILogger<PlaceOrderUseCase> logger) : IPlaceOrderUseCase
 {
     public Task<OrderResponse> ExecuteAsync(Guid userId, Guid orderId, CancellationToken ct) =>
         ConcurrencyRetry.ExecuteAsync(unitOfWork, logger, async () =>
@@ -120,7 +140,7 @@ public sealed class DeleteOrderUseCase(
     IOrderRepository orders,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
-    ILogger<DeleteOrderUseCase> logger)
+    ILogger<DeleteOrderUseCase> logger) : IDeleteOrderUseCase
 {
     public Task ExecuteAsync(Guid userId, Guid orderId, CancellationToken ct) =>
         ConcurrencyRetry.ExecuteAsync(unitOfWork, logger, async () =>
@@ -138,7 +158,7 @@ public sealed class ExpireAbandonedDraftsUseCase(
     IOrderRepository orders,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
-    ILogger<ExpireAbandonedDraftsUseCase> logger)
+    ILogger<ExpireAbandonedDraftsUseCase> logger) : IExpireAbandonedDraftsUseCase
 {
     public async Task<int> ExecuteAsync(TimeSpan draftTimeout, int batchSize, CancellationToken ct)
     {
@@ -151,7 +171,10 @@ public sealed class ExpireAbandonedDraftsUseCase(
             unitOfWork.DiscardChanges();
 
             Order? order = await orders.GetByIdAsync(id, ct);
-            if (order is null || order.Status != OrderStatus.Draft || order.UpdatedAt >= cutoff) continue;
+            if (order is null || order.Status != OrderStatus.Draft || order.UpdatedAt >= cutoff)
+            {
+                continue;
+            }
 
             DateTimeOffset lastUpdated = order.UpdatedAt;
             order.Expire(timeProvider.GetUtcNow());

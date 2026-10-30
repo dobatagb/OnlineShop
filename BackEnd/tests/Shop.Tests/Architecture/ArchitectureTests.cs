@@ -72,6 +72,30 @@ public class ArchitectureTests
     }
 
     [Fact]
+    public void Every_use_case_is_used_through_its_interface()
+    {
+        List<Type> useCases = ApplicationAssembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false, IsPublic: true } && t.Name.EndsWith("UseCase"))
+            .ToList();
+        Assert.NotEmpty(useCases);
+
+        List<string> withoutInterface = useCases
+            .Where(t => t.GetInterface("I" + t.Name) is null)
+            .Select(t => t.Name)
+            .ToList();
+        Assert.True(withoutInterface.Count == 0, "Use cases without an interface: " + string.Join(", ", withoutInterface));
+
+        TestResult result = Types.InAssembly(ApiAssembly)
+            .That()
+            .ResideInNamespaceMatching(@"^Shop\.Api\.(Endpoints|BackgroundJobs)")
+            .ShouldNot()
+            .HaveDependencyOnAny(useCases.Select(t => t.FullName!).ToArray())
+            .GetResult();
+
+        AssertSuccessful(result);
+    }
+
+    [Fact]
     public void Dependency_checks_detect_real_dependencies()
     {
         TestResult infrastructureUsesEf = Types.InAssembly(InfrastructureAssembly)

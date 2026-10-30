@@ -30,7 +30,10 @@ public sealed class DatabaseSeeder(
 
     private async Task<int> SeedUsersAsync(DateTimeOffset now, CancellationToken ct)
     {
-        if (await db.Users.AnyAsync(u => u.Email == DemoEmail, ct)) return 0;
+        if (await db.Users.AnyAsync(u => u.Email == DemoEmail, ct))
+        {
+            return 0;
+        }
 
         User user = new User(DemoEmail, "Demo Customer", now);
         user.SetPasswordHash(passwordHasher.Hash(user, DemoPassword));

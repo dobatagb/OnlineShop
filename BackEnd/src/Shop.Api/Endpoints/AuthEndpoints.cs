@@ -6,7 +6,7 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/auth/login", async (LoginRequest request, LoginUseCase login, CancellationToken ct) =>
+        app.MapPost("/auth/login", async (LoginRequest request, ILoginUseCase login, CancellationToken ct) =>
                 await login.ExecuteAsync(request, ct) is { } response
                     ? Results.Ok(response)
                     : Results.Problem(
